@@ -60,16 +60,10 @@ dataset = rbind(f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f
 dataset=dataset[,-1]
 
 ################## DATASET PREPARATION ###################################
-library(dplyr)
-library(spotifyr)
+
 library(boot)
-library(caret)
-library(caret)
 library(ggplot2)
 library(ggridges)
-library(cowplot)
-library(grid)
-library(xgboost)
 library(FNN)
 
 #change name of row so if needed can work with spotifyr package
@@ -172,7 +166,7 @@ boxplot(onlyNums$popularity)
 
 par(mfrow=c(4,5))
 par(mar=c(1,1,1,1))
-
+popularity = onlyNums$popularity
 for(r in 2:20){
   this = onlyNums[,r]
   plot(popularity,this,main=colnames(onlyNums[r]))
@@ -195,8 +189,7 @@ ggplot(trainData, aes(x = popularity, y = season_release)) +
   geom_joy(fill = 'pink3') + 
   theme_joy()
 
-# There doesnt seem to be major implications here, however on average it seems winter releases are least
-# and the rest are ce
+# There doesnt seem to be major implications here
 
 ######################################### STEPPWISE REGRESSION ###############################
 
@@ -207,17 +200,6 @@ fullModel #AIC 7793
 #Let's see what variables stepwise thinks we should take
 step(glm(popularity~.,data=trainData))
 #AIC: 7769
-
-################ SCALING COLUMNS #######################################################
-                                                                                        #
- trainScales = scale(trainData[-c(1,2,18,22)])                                          #
- View(trainScales)                                                                      #
- trainScales = data.frame(trainData[1],trainScales,trainData[c(2,18,22)])               #
- step(glm(popularity~.,data=trainScales))                                               #
-                                                                                        #
- #this made no differnce so not going to use it. Would rather original numbers          #
-                                                                                        #
-########################################################################################
 
 # results in model with 9 vars, AIC: 7769: 
 step1 = glm(formula = popularity ~ explicit + track_number + mode + liveness + 
@@ -231,6 +213,16 @@ length(coefStep1) #12
 missclassStep1 = sum(abs(trainData$popularity-predict(step1,newdata=trainData)))/1382
 missclassStep1
 #3.180397
+
+################ SCALING COLUMNS #######################################################
+                                                                                        #
+ trainScales = scale(trainData[-c(1,2,18,22)])                                          #                                                                     #
+ trainScales = data.frame(trainData[1],trainScales,trainData[c(2,18,22)])               #
+ step(glm(popularity~.,data=trainScales))                                               #
+                                                                                        #
+ #this made no differnce so not going to use it. Would rather original numbers          #
+                                                                                        #
+########################################################################################
 
 #Let's see if forward selection is better:
 step(glm(popularity~1,data=trainData),direction="forward",scope=list(lower=glm(popularity~1, data=trainData),
@@ -290,7 +282,6 @@ knn1 = knn.reg(train = onlyNums[,-1],test=onlyNums[,-1],y=popularity,k=10)
 misclassKnn1 = sum(abs(onlyNums$popularity - knn1$pred))/1382
 misclassKnn1 #3.995803
 
-
 # using scaled variables 
 trainScales1 = trainScales[-c(21,22)] #removing nonnumeric columns
 trainScales1$explicit = as.numeric(trainScales1$explicit) #making explicit 0 and 1
@@ -329,11 +320,11 @@ misclassEnsemble2 #3.937929 - better than both ind. models used
 #Lets see how our models fair with the test data
 
 # Data preperation
-testData = testData[, -c(2:7,11,13,22:23,31)]
-scaledTest = scale(testData[-c(1,2,18,22)])   
-scaledTest = data.frame(testData[1],testData[2],scaledTest)
-scaledTest$explicit = as.numeric(scaledTest$explicit)
-scaledTest1 = scaledTest[-19]
+testData = testData[, -c(2:7,11,13,22:23,31)] #remove obviously irrelevant columns
+scaledTest = scale(testData[-c(1,2,18,22)])    #scale numeric columns
+scaledTest = data.frame(testData[1],testData[2],scaledTest) #add response and T/F back
+scaledTest$explicit = as.numeric(scaledTest$explicit) #change T/F to 0/1
+scaledTest1 = scaledTest[-19] #remove album_popularity
 View(scaledTest1)
 
 # Predictions from step1
@@ -344,20 +335,17 @@ sum(abs(testStep1 - testData$popularity))/461 #3.082998
 #Predictions from step2
 testStep2 = (predict(step2,newdata=testData) )
 testStep2 = as.vector(testStep2)
-sum(abs(testStep2 - testData$popularity))/461
-#3.877785
+sum(abs(testStep2 - testData$popularity))/461 #3.877785
 
 #knn2
 knnTest1 = knn.reg(train = trainScales1[,-1],test=scaledTest[,-1],y=trainScales[,1],k=10)$pred
-sum(abs(knnTest1 - testData$popularity))/461
-#5.504338
+sum(abs(knnTest1 - testData$popularity))/461 #5.504338
 
 #knn3
 knnTest2 = knn.reg(train = trainScales2[,-1],test=scaledTest1[,-1],y=trainScales2[,1],k=10)$pred
-sum(abs(knnTest2 - testData$popularity))/461
-#6.680477
+sum(abs(knnTest2 - testData$popularity))/461 #6.680477
 
-# Ensemble of step1 and knn2
+# Ensembles 
 ensembleTest1 = (testStep1 + knnTest1)/2
 ensembleTest2 = (testStep2 + knnTest2)/2
 
